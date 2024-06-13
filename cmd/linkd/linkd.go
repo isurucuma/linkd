@@ -2,7 +2,7 @@ package main
 
 import (
 	"errors"
-	link "linkd"
+	"linkd/link"
 	"log/slog"
 	"net/http"
 	"time"
@@ -17,7 +17,7 @@ func main() {
 
 	log.Info("starting", "addr", addr)
 
-	links := link.NewServer()
+	links := link.NewServer(link.NewStore())
 	handler := http.TimeoutHandler(links, time.Second, "timeout")
 
 	srv := &http.Server{
