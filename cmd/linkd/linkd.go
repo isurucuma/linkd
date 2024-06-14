@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"linkd/httpio"
 	"linkd/link"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ func main() {
 
 	links := link.NewServer(link.NewStore())
 	handler := http.TimeoutHandler(links, time.Second, "timeout")
+	handler = httpio.LoggingMiddleware(handler)
 
 	srv := &http.Server{
 		Addr:        addr,
