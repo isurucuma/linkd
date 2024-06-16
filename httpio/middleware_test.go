@@ -2,6 +2,7 @@ package httpio
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -39,5 +40,57 @@ func TestLoggingMiddleware(t *testing.T) {
 	}
 	if t.Failed() {
 		t.Log("got:", got)
+	}
+}
+
+func TestTraceMiddleware(t *testing.T) {
+	var (
+		traceId         int64
+		traceValPresent bool
+	)
+
+	var handler http.Handler
+	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceId, traceValPresent = TraceId(r.Context())
+	})
+
+	handler = TraceMiddleware(handler)
+
+	handler.ServeHTTP(
+		httptest.NewRecorder(),
+		httptest.NewRequest("GET", "/test", nil),
+	)
+
+	if !traceValPresent {
+		t.Fatalf("got context without trace id")
+	}
+
+	if traceId <= 0 {
+		t.Fatalf("got %d, want a positive trave id", traceId)
+	}
+
+	prevTraceId := traceId
+	handler.ServeHTTP(
+		httptest.NewRecorder(),
+		httptest.NewRequest("GET", "/test", nil),
+	)
+
+	if prevTraceId == traceId {
+		t.Fatalf("got duplicate trace id: %d", traceId)
+	}
+}
+
+func TestLogHandler(t *testing.T) {
+	var buf bytes.Buffer
+
+	ctx := SetTraceId(context.Background(), 22)
+	testLogger := slog.New(&LogHandler{
+		Handler: slog.NewTextHandler(&buf, nil),
+	})
+
+	testLogger.Log(ctx, slog.LevelInfo, "test")
+
+	if got := buf.String(); !strings.Contains(got, "22") {
+		t.Errorf("want trace id %d in the log, got %s", 22, got)
 	}
 }

@@ -1,9 +1,9 @@
 package link
 
 import (
-	"errors"
 	"fmt"
 	"linkd/bite"
+	"linkd/httpio"
 	"net/http"
 )
 
@@ -13,8 +13,8 @@ type Server struct {
 
 func NewServer(links *Store) *Server {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /shorten", Shorten(links))
-	mux.HandleFunc("GET /r/{key}", Resolve(links))
+	mux.Handle("POST /shorten", Shorten(links))
+	mux.Handle("GET /r/{key}", Resolve(links))
 	mux.HandleFunc("GET /health", Health)
 	return &Server{
 		Handler: mux,
@@ -33,29 +33,56 @@ func NewServer(links *Store) *Server {
 // 	http.Redirect(w, r, uri, http.StatusFound)
 // }
 
-func Shorten(links *Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		link := Link{
-			Key: r.FormValue("key"),
-			URL: r.FormValue("url"),
+// Shorten handles the URL shortening requests.
+//
+//	Status Code       Condition
+//	201               The link is successfully shortened.
+//	400               The request is invalid.
+//	409               The link already exists.
+//	405               The request method is not POST.
+//	413               The request body is too large.
+//	500               There is an internal error.
+func Shorten(links *Store) httpio.Handler {
+	return func(w http.ResponseWriter, r *http.Request) httpio.Handler {
+		// link := Link{
+		// 	Key: r.FormValue("key"),
+		// 	URL: r.FormValue("url"),
+		// }
+		var link Link
+		max := http.MaxBytesReader(w, r.Body, 4_096) // provides extra layer of protection, if the body is larger than the max bytes then this will close the reader
+		if err := httpio.DecodeJSON(max, &link); err != nil {
+			return httpio.Error(invalidRequest(err))
 		}
 		if err := links.Create(r.Context(), link); err != nil {
-			httpError(w, err)
-			return
+			// httpio.Error(err)
+			// return
+			return httpio.Error(err)
 		}
-		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(link.Key))
+		// w.WriteHeader(http.StatusCreated)
+		// w.Write([]byte(link.Key))
+		return httpio.Code(http.StatusCreated, httpio.JSON(
+			map[string]string{
+				"key": link.Key,
+			},
+		))
 	}
 }
 
-func Resolve(links *Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// Resolve handles the URL resolving requests for the short links.
+//
+//	Status Code       Condition
+//	302               The link is successfully resolved.
+//	400               The request is invalid.
+//	404               The link does not exist.
+//	500               There is an internal error.
+func Resolve(links *Store) httpio.Handler {
+	return func(w http.ResponseWriter, r *http.Request) httpio.Handler {
 		link, err := links.Retrieve(r.Context(), r.PathValue("key"))
 		if err != nil {
-			httpError(w, err)
-			return
+			return httpio.Error(err)
 		}
 		http.Redirect(w, r, link.URL, http.StatusFound)
+		return httpio.Ok
 	}
 }
 
@@ -63,20 +90,6 @@ func Health(w http.ResponseWriter, r *http.Request) { // by default handlers wri
 	fmt.Fprintln(w, "ok")
 }
 
-func httpError(w http.ResponseWriter, err error) {
-	if err == nil { // no error #A
-		return
-	}
-	var code int
-	switch {
-	case errors.Is(err, bite.ErrInvalidRequest):
-		code = http.StatusBadRequest
-	case errors.Is(err, bite.ErrExists):
-		code = http.StatusConflict
-	case errors.Is(err, bite.ErrNotExists):
-		code = http.StatusNotFound
-	default:
-		code = http.StatusInternalServerError
-	}
-	http.Error(w, err.Error(), code)
+func invalidRequest(err error) error {
+	return fmt.Errorf("%w: %v", bite.ErrInvalidRequest, err)
 }

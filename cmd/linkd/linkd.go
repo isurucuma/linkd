@@ -6,6 +6,7 @@ import (
 	"linkd/link"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -13,7 +14,13 @@ func main() {
 	const timeout = 10 * time.Second
 	const addr = "localhost:8080"
 
-	log := slog.With("app", "linkd")
+	// log := slog.With("app", "linkd")
+	log := slog.New(&httpio.LogHandler{
+		Handler: slog.NewTextHandler(os.Stderr, nil),
+	})
+
+	log = log.With("app", "linkd")
+
 	slog.SetDefault(log)
 
 	log.Info("starting", "addr", addr)
@@ -21,6 +28,7 @@ func main() {
 	links := link.NewServer(link.NewStore())
 	handler := http.TimeoutHandler(links, time.Second, "timeout")
 	handler = httpio.LoggingMiddleware(handler)
+	handler = httpio.TraceMiddleware(handler)
 
 	srv := &http.Server{
 		Addr:        addr,
