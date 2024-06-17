@@ -2,53 +2,81 @@ package link
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"linkd/bite"
-	"sync"
+	"linkd/sqlx"
 )
 
 type Store struct {
-	mu    sync.RWMutex
-	links map[string]Link
+	db *sqlx.DB
 }
 
-func NewStore() *Store {
+func NewStore(db *sqlx.DB) *Store {
 	return &Store{
-		links: make(map[string]Link),
+		db: db,
 	}
 }
 
-func (s *Store) Create(_ context.Context, link Link) error {
+var (
+	ErrLinkExists   = fmt.Errorf("link %w", bite.ErrExists)
+	ErrLinkNotExist = fmt.Errorf("link %w", bite.ErrNotExists)
+)
+
+func (s *Store) Create(ctx context.Context, link Link) error {
 	if err := validateNewLink(link); err != nil {
 		return fmt.Errorf("%w: %w", bite.ErrInvalidRequest, err)
 	}
 	if link.Key == "fortesting" {
 		return fmt.Errorf("%w: db at IP ... failed", bite.ErrInternal)
 	}
-	// holds the write-lock until the function returns
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.links[link.Key]; ok {
+
+	const query = `
+	INSERT INTO links (
+	short_key, uri
+	) VALUES (
+	 ?, ?
+	 );`
+
+	_, err := s.db.ExecContext(ctx, query, link.Key, link.URL)
+	if sqlx.IsPrimaryKeyViolation(err) {
 		return bite.ErrExists
 	}
-	s.links[link.Key] = link
+	if err != nil {
+		return fmt.Errorf("creating link: %w", err)
+	}
 	return nil
 }
 
 // Retrieve gets a link from the given key.
-func (s *Store) Retrieve(_ context.Context, key string) (Link, error) {
+func (s *Store) Retrieve(ctx context.Context, key string) (Link, error) {
 	if err := validateLinkKey(key); err != nil {
 		return Link{}, fmt.Errorf("%w: %w", bite.ErrInvalidRequest, err)
 	}
+
+	const query = `
+								SELECT uri
+								FROM links
+								WHERE short_key = ?`
+	var url string
+
 	if key == "fortesting" {
 		return Link{}, fmt.Errorf("%w: db at IP ... failed", bite.ErrInternal)
 	}
-	// holds the read-lock until the function returns
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	link, ok := s.links[key]
-	if !ok {
-		return Link{}, bite.ErrNotExists
+
+	err := s.db.QueryRowContext(ctx, query, key).Scan(&url)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Link{}, ErrLinkNotExist
 	}
-	return link, nil
+
+	if err != nil {
+		err := fmt.Errorf("retrieving link by key %q: %w", key, err)
+		return Link{}, err
+	}
+
+	return Link{
+		Key: key,
+		URL: url,
+	}, nil
 }
