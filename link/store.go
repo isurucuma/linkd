@@ -39,7 +39,8 @@ func (s *Store) Create(ctx context.Context, link Link) error {
 	 ?, ?
 	 );`
 
-	_, err := s.db.ExecContext(ctx, query, link.Key, link.URL)
+	url := sqlx.Base64String(link.URL)
+	_, err := s.db.ExecContext(ctx, query, link.Key, url)
 	if sqlx.IsPrimaryKeyViolation(err) {
 		return bite.ErrExists
 	}
@@ -59,12 +60,12 @@ func (s *Store) Retrieve(ctx context.Context, key string) (Link, error) {
 								SELECT uri
 								FROM links
 								WHERE short_key = ?`
-	var url string
 
 	if key == "fortesting" {
 		return Link{}, fmt.Errorf("%w: db at IP ... failed", bite.ErrInternal)
 	}
 
+	var url sqlx.Base64String
 	err := s.db.QueryRowContext(ctx, query, key).Scan(&url)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Link{}, ErrLinkNotExist
@@ -77,6 +78,6 @@ func (s *Store) Retrieve(ctx context.Context, key string) (Link, error) {
 
 	return Link{
 		Key: key,
-		URL: url,
+		URL: url.String(),
 	}, nil
 }
