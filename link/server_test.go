@@ -72,6 +72,28 @@ func TestShorten(t *testing.T) {
 	}
 }
 
+type fakeLinkCreator func(context.Context, Link) error
+
+func (f fakeLinkCreator) Create(ctx context.Context, link Link) error {
+	return f(ctx, link)
+}
+
+func TestShortenWithTestDouble(t *testing.T) {
+	creator := fakeLinkCreator(func(ctx context.Context, l Link) error {
+		return nil
+	})
+	handler := shorten(creator)
+
+	body := `{"key": "go", "url": "https://go.dev"}`
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", strings.NewReader(body))
+	handler.ServeHTTP(w, r)
+
+	if want := http.StatusCreated; w.Code != want {
+		t.Errorf("got status code = %d, want %d", w.Code, want)
+	}
+}
+
 func TestShortenInternalError(t *testing.T) {
 	t.Parallel()
 	w := httptest.NewRecorder()

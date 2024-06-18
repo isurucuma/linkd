@@ -21,6 +21,14 @@ func NewServer(links *Store) *Server {
 	}
 }
 
+func Shorten(links *Store) httpio.Handler {
+	return shorten(links)
+}
+
+func Resolve(links *Store) httpio.Handler {
+	return resolve(links)
+}
+
 // func Shorten(w http.ResponseWriter, r *http.Request) {
 // 	w.WriteHeader(http.StatusCreated)
 // 	fmt.Fprintln(w, "go")
@@ -42,7 +50,7 @@ func NewServer(links *Store) *Server {
 //	405               The request method is not POST.
 //	413               The request body is too large.
 //	500               There is an internal error.
-func Shorten(links *Store) httpio.Handler {
+func shorten(links linkCreator) httpio.Handler {
 	return func(w http.ResponseWriter, r *http.Request) httpio.Handler {
 		// link := Link{
 		// 	Key: r.FormValue("key"),
@@ -75,7 +83,7 @@ func Shorten(links *Store) httpio.Handler {
 //	400               The request is invalid.
 //	404               The link does not exist.
 //	500               There is an internal error.
-func Resolve(links *Store) httpio.Handler {
+func resolve(links linkRetriever) httpio.Handler {
 	return func(w http.ResponseWriter, r *http.Request) httpio.Handler {
 		link, err := links.Retrieve(r.Context(), r.PathValue("key"))
 		if err != nil {

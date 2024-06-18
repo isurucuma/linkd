@@ -19,6 +19,14 @@ func NewStore(db *sqlx.DB) *Store {
 	}
 }
 
+type linkCreator interface {
+	Create(ctx context.Context, link Link) error
+}
+
+type linkRetriever interface {
+	Retrieve(ctx context.Context, key string) (Link, error)
+}
+
 var (
 	ErrLinkExists   = fmt.Errorf("link %w", bite.ErrExists)
 	ErrLinkNotExist = fmt.Errorf("link %w", bite.ErrNotExists)
