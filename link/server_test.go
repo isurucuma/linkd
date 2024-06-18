@@ -1,6 +1,8 @@
 package link
 
 import (
+	"context"
+	"linkd/sqlx/sqlxtest"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,5 +51,38 @@ func TestServer(t *testing.T) {
 				t.Errorf("got status code = %d, want %d", w.Code, tt.expectedStatusCode)
 			}
 		})
+	}
+}
+
+func TestShorten(t *testing.T) {
+	t.Parallel()
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(
+		`{"key": "go", "url": "https://go.dev"}`,
+	))
+	store := NewStore(
+		sqlxtest.Dial(context.Background(), t),
+	)
+	Shorten(store).ServeHTTP(w, r)
+	if w.Code != http.StatusCreated {
+		t.Errorf("got status code = %d, want %d", w.Code, http.StatusCreated)
+	}
+	if got := w.Body.String(); !strings.Contains(got, `"go"`) {
+		t.Errorf("got body = %s\twant contains %s", got, `"go"`)
+	}
+}
+
+func TestShortenInternalError(t *testing.T) {
+	t.Parallel()
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(
+		`{"key": "go", "url": "https://go.dev"}`,
+	))
+	store := NewStore(
+		sqlxtest.Dial(context.Background(), t))
+	_ = store.db.Close()
+	Shorten(store).ServeHTTP(w, r)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("got status code = %d, want %d", w.Code, http.StatusInternalServerError)
 	}
 }
